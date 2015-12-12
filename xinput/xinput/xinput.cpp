@@ -11,7 +11,7 @@
 int _tmain(int argc, _TCHAR* argv[])
 {
 	CXBOXController* Player1;
-	Serial* SP = new Serial("\\\\.\\COM10");
+	Serial* SP = new Serial("\\\\.\\COM3");
 	Player1 = new CXBOXController(1);
 
 	std::cout << "Instructions:\n";
@@ -41,35 +41,33 @@ int _tmain(int argc, _TCHAR* argv[])
 	pack.d = 0;
 	while (true)
 	{
-		if (Player1->IsConnected())
-		{
 			if (Player1->GetState().Gamepad.wButtons & XINPUT_GAMEPAD_A)
 			{
 				//Player1->Vibrate(65535, 0);
-				pack.p += 10;
+				if (pack.p < 254)pack.p += 1;
 			}
 
 			if (Player1->GetState().Gamepad.wButtons & XINPUT_GAMEPAD_B)
 			{
 				//Player1->Vibrate(0, 65535);
-				if(pack.p >= 10) pack.p -= 10;
+				if(pack.p >= 1) pack.p -= 1;
 			}
 
 			if (Player1->GetState().Gamepad.wButtons & XINPUT_GAMEPAD_X)
 			{
 				//Player1->Vibrate(65535, 65535);
-				pack.i += 100;
+				if (pack.i < 254) pack.i += 1;
 			}
 
 			if (Player1->GetState().Gamepad.wButtons & XINPUT_GAMEPAD_Y)
 			{
 				//Player1->Vibrate();
-				if (pack.i > 0) pack.i -= 100;
+				if (pack.i > 0) pack.i -= 1;
 			}
 			if (Player1->GetState().Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP)
 			{
 				//Player1->Vibrate(65535, 65535);
-				pack.d++;
+				if (pack.d < 254) pack.d++;
 			}
 
 			if (Player1->GetState().Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN)
@@ -105,10 +103,6 @@ int _tmain(int argc, _TCHAR* argv[])
 			else pack.RY -= 2;
 			pack.leftTrigger = Player1->GetState().Gamepad.bLeftTrigger;
 			pack.rightTrigger = Player1->GetState().Gamepad.bRightTrigger;
-			if (pack.LY < 31 && pack.LY > 29) pack.LY = 30;
-			if (pack.LX < 31 && pack.LX > 29) pack.LX = 30;
-			if (pack.RY < 31 && pack.RY > 29) pack.RY = 30;
-			if (pack.RX < 31 && pack.RX > 29) pack.RX = 30;
 			pack.crc = pack.LX + pack.LY + pack.RX + pack.RY + pack.leftTrigger;
 			// preambu³a pakietu
 			char data = 0xAB;
@@ -125,19 +119,13 @@ int _tmain(int argc, _TCHAR* argv[])
 			SP->WriteData(&pack.d, sizeof(pack.d));
 			SP->WriteData(&pack.crc, sizeof(pack.crc));
 			// wyœwietlenie danych z kontrolera
-			std::cout << pack.LX << "\t" << pack.LY << "\t";
-			std::cout << pack.RX << "\t" << pack.RY << "\t";
-			std::cout << pack.leftTrigger << " " << pack.rightTrigger << "\t";
-			std::cout << "P: " << pack.p / 100000.0 << "\tI: " << pack.i / 100000.0 << "\tD: " << pack.d / 100000.0 << std::endl;
-
-		}  
-		else
-		{
-			std::cout << "\n\tERROR! PLAYER 1 - XBOX 360 Controller Not Found!\n";
-			std::cout << "Press Any Key To Exit.";
-			std::cin.get();
-			break;
-		}
+			std::system("cls");
+			std::cout << "QUADCOPTER REMOTE v0.3\n";
+			std::cout << "Pitch: " << pack.LY << "\n";
+			std::cout << "Roll: " << pack.LX << "\n";
+			std::cout << "Yaw: " << pack.RX << "\n";
+			std::cout << "Throttle: " << pack.leftTrigger << "\n";
+			std::cout << "P: " << pack.p/100.0 << "\nI: " << pack.i/100.0 << "\nD: " << pack.d/100.0 << std::endl;
 	}
 
 	delete(Player1);
