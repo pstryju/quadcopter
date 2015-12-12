@@ -55,3 +55,11 @@ xinput/xinput.sdf
 xinput/xinput/Debug/xinput.obj
 *.tlog
 *.filters
+xinput/xinput.opensdf
+*.dll
+xinput/xinput/Debug/stdafx.obj
+*.obj
+xinput/xinput/Debug/stdafx.obj
+*.idb
+*.log
+xinput/xinput/Debug/stdafx.obj
