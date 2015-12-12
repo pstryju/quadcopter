@@ -1,295 +1,274 @@
 #ifndef QUADARDU
 #define QUADARDU
 
-#include <Servo.h>
-#include <PID_v1.h>
-#include <SPI.h>
-#include <nRF24L01.h>
-#include <RF24.h>
-#include <MPU6050_6Axis_MotionApps20.h>
-#include <I2Cdev.h>
-#include <Wire.h>
+//#define DEBUGMODE
 
-
-
-//#define DEBUG
-#define DEBUGMODE
-#define DEBUGYPR
-//#define DEBUGPID
-//#define DEBUGRADIO
-//#define DEBUGSPEED
-//#define DEBUGFUNCTIONS
-
-
-#define CE_PIN   9
-#define CSN_PIN 10
-
-#define ESC_FL 5
+#define ESC_FL 6
 #define ESC_RL 4
-#define ESC_FR 7
-#define ESC_RR 6
+#define ESC_FR 5
+#define ESC_RR 3
 
-#define ESC_MIN 30
-#define ESC_MAX 140
-#define ESC_TAKEOFF_OFFSET 50
-#define ESC_ARM_DELAY 3000
+#define ESC_MIN 800
+#define ESC_MAX 2000
+#define ESC_TAKEOFF_OFFSET 830
 
 #define RC_THROTTLE_MAX 255
 #define RC_THROTTLE_MIN 0
 
-#define PITCH_P_VAL 0.13
-#define PITCH_I_VAL 0
-#define PITCH_D_VAL 0.005
+#define PITCH_P_VAL 0.6
+#define PITCH_I_VAL 0.31
+#define PITCH_D_VAL 0
 
-#define ROLL_P_VAL 0.13
-#define ROLL_I_VAL 0
-#define ROLL_D_VAL 0.005
+#define ROLL_P_VAL 0.6
+#define ROLL_I_VAL 0.31
+#define ROLL_D_VAL 0
 
-#define YAW_P_VAL 0.13
-#define YAW_I_VAL 0
-#define YAW_D_VAL 0.005
+#define YAW_P_VAL 2.11
+#define YAW_I_VAL 0.35
+#define YAW_D_VAL 0
 
-#define PITCH_MIN -30
-#define PITCH_MAX 30
-#define ROLL_MIN -30
-#define ROLL_MAX 30
-#define YAW_MIN -180
-#define YAW_MAX 180
-#define PID_PITCH_INFLUENCE 15
-#define PID_ROLL_INFLUENCE 15
-#define PID_YAW_INFLUENCE 15
-#define PITCH_CORRECTION 4.5
+#define ANGLEX_P_VAL 0.22
+#define ANGLEX_I_VAL 0
+#define ANGLEX_D_VAL 0
 
+#define ANGLEY_P_VAL 0.22
+#define ANGLEY_I_VAL 0
+#define ANGLEY_D_VAL 0
 
-/*  MPU variables
- *
- */
+#define PITCH_MIN -90
+#define PITCH_MAX 90
+#define ROLL_MIN -90
+#define ROLL_MAX 90
+#define YAW_MIN -45
+#define YAW_MAX 45
 
-MPU6050 mpu;                           // mpu interface object
+#define PID_PITCH_INFLUENCE 300
+#define PID_ROLL_INFLUENCE 300
+#define PID_YAW_INFLUENCE 200
+#define PID_ANGLEX_INFLUENCE 100
+#define PID_ANGLEY_INFLUENCE 100
 
-float ypr[3] = {0.0f,0.0f,0.0f};       // yaw pitch roll values
-float yprLast[3] = {0.0f, 0.0f, 0.0f};
+#define GYROSCOPE_SENSITIVITY 65.536
+#define GYRO_MAF_NR  3 
+#define SPLIT  0.98 //Complementary filter
+#define RadToDeg 180.0/PI 
+#define  ACC_HPF_NR  98 
 
+#include <Servo.h>
+#include <PIDCont.h>
+#include <SPI.h>
+#include <Mirf.h>
+#include <nRF24L01.h>
+#include <MirfHardwareSpiDriver.h>
+#include <I2Cdev.h>
+#include <Wire.h>
+#include "MPU6050.h"
 
-const uint64_t pipe = 0xE8E8F0F0E1LL;
-//const uint64_t pipe1 = 0xF0F0F0F0D2LL;
-RF24 radio(CE_PIN, CSN_PIN);
+bool rateAngleSwitch = 1;
+byte buf[7];
+byte rx_throttle;
+int rx_pitch, rx_roll, rx_yaw;
 
-float remote[7] = {0,0,0,0};
-float remoteLast[7];
-int velocity;                          // global velocity
-int velocityLast;
-float bal_roll, bal_pitch;                 // motor balances can vary between -100 & 100
-float bal_axes;                       // throttle balance between axes -100:ac , +100:bd
+MPU6050 mpu;
+double bal_roll = 0, bal_pitch = 0, bal_axes = 0;
+float gx_aver=0;
+float gy_aver=0;
+float gz_aver=0;
+float gx_temp[GYRO_MAF_NR]={0.0,0.0};
+float gy_temp[GYRO_MAF_NR]={0.0,0.0};
+float gz_temp[GYRO_MAF_NR]={0.0,0.0};
+float angle_pitch, angle_roll;
+int accx_temp = 0;
+int accy_temp = 0;
+int accz_temp = 0;
 
-int va, vb, vc, vd;                    //velocities
+PIDCont PIDroll, PIDpitch, PIDyaw ,PIDangleX, PIDangleY;
+int PIDroll_val, PIDpitch_val, PIDyaw_val;
+float pGain, iGain, dGain;
+
 Servo fr,fl,rr,rl;
+int throttle; 
 
-
-bool dmpReady = false;  // set true if DMP init was successful
-uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
-uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
-uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
-uint16_t fifoCount;     // count of all bytes currently in FIFO
-uint8_t fifoBuffer[64];
-Quaternion q; 
-volatile bool mpuInterrupt = false; 
-VectorInt16 aa;         // [x, y, z]            accel sensor measurements
-VectorInt16 aaReal;     // [x, y, z]            gravity-free accel sensor measurements
-VectorInt16 aaWorld;    // [x, y, z]            world-frame accel sensor measurements
-VectorFloat gravity;    // [x, y, z]            gravity vector
-float euler[3];
-int time;
-
-PID pitchReg(&ypr[1], &bal_pitch, &remote[2], PITCH_P_VAL, PITCH_I_VAL, PITCH_D_VAL, DIRECT);
-PID rollReg(&ypr[2], &bal_roll, &remote[1], ROLL_P_VAL, ROLL_I_VAL, ROLL_D_VAL, DIRECT);
-PID yawReg(&ypr[0], &bal_axes, &remote[3], YAW_P_VAL, YAW_I_VAL, YAW_D_VAL, DIRECT);
-
-void dmpDataReady() {
-    mpuInterrupt = true;
-}
+unsigned long ts=millis();
+unsigned long tf=micros();
+unsigned long timeAnglePrevious;
+unsigned long radioWatchdogTimer;
+unsigned int radioLostTimer;
 
 void setup(){
-    #ifdef DEBUGMODE                          // Device tests go here
-  Serial.begin(115200);                 // Serial only necessary if in DEBUG mode
+  
+ #ifdef DEBUGMODE
+  Serial.begin(115200);
   Serial.flush();
   Serial.println("EOS!");
-  #endif
-  radioSetup();
+ #endif
+ 
+  initRadio();
   initESCs();
   initMPU();
-  initBalancing();
   initRegulators();
-  
-  
-
+  timeAnglePrevious=millis();
 }
 
-/* loop function
- *
- */
-
 void loop(){
-  time = millis();
-  if (!dmpReady) return;
-  while(!mpuInterrupt && fifoCount < packetSize) {
-   // #ifdef DEBUGYPR
-    //Serial.println("Waiting for DMP");
-   // #endif
-  }
-    #ifdef DEBUGFUNCTIONS
-    Serial.println("LOOP!");
-    #endif
     rx();
-    getYPR();
+    getSensorsData();
     computePID();
     calculateVelocities();
-    updateMotors(); 
-  //Serial.println(millis() - time);
 }
 
 void initMPU() {
   Wire.begin();
-  TWBR = 24; 
   mpu.initialize();
-  mpu.testConnection();
-  devStatus = mpu.dmpInitialize();
-  mpu.setXGyroOffset(220);
-  mpu.setYGyroOffset(76);
-  mpu.setZGyroOffset(-85);
-  mpu.setZAccelOffset(1788);
-  if (devStatus == 0) {
-    mpu.setDMPEnabled(true);
-    attachInterrupt(0, dmpDataReady, RISING);
-    mpuIntStatus = mpu.getIntStatus();
-    dmpReady = true;
-    packetSize = mpu.dmpGetFIFOPacketSize();    
-  }
-  else {
-        // ERROR!
-        // 1 = initial memory load failed
-        // 2 = DMP configuration updates failed
-        // (if it's going to break, usually the code will be 1)
-        Serial.print(F("DMP Initialization failed (code "));
-        Serial.print(devStatus);
-        Serial.println(F(")"));
-    }
+  mpu.setXGyroOffset(106);
+  mpu.setYGyroOffset(47);
+  mpu.setZGyroOffset(31);
+  mpu.setXAccelOffset(-4953);
+  mpu.setYAccelOffset(-1353);
+  mpu.setZAccelOffset(947);
 }
 
-void radioSetup() {
-  radio.begin();
-  radio.setDataRate(RF24_250KBPS);
-  radio.setPALevel(RF24_PA_MAX);
-  radio.setChannel(70);
+void initRadio() {
+  Mirf.cePin = 9;
+  Mirf.csnPin = 10;
   
-  radio.enableDynamicPayloads();
-  //radio.setRetries(15,15);
- // radio.setCRCLength(RF24_CRC_16);
-  radio.openReadingPipe(1,pipe);
-  //radio.openWritingPipe(pipe1);
-  radio.startListening();
+  Mirf.spi = &MirfHardwareSpi;
+  Mirf.init();
+  Mirf.setRADDR((byte *)"clie1");
+  Mirf.payload = 7;
+  Mirf.config();
 }
 
 void computePID(){
-  #ifdef DEBUGFUNCTIONS
-  Serial.println("computePID");
-  #endif
-  if((remote[1] < ROLL_MIN) || (remote[1] > ROLL_MAX)) remote[1] = remoteLast[1];
-  if((remote[2] < PITCH_MIN) || (remote[2] > PITCH_MAX)) remote[2] = remoteLast[2];
-  if((remote[3] < YAW_MIN) || (remote[3] > YAW_MAX)) remote[3] = remoteLast[3];
-  remoteLast[1] = remote[1];
-  remoteLast[2] = remote[2];
-  remoteLast[3] = remote[3];
+  if(rateAngleSwitch==1) {
+    PIDangleX.resetI();
+    PIDangleY.resetI();
+  }
 
-  pitchReg.Compute();
-  rollReg.Compute();
-  yawReg.Compute();
+  if (rateAngleSwitch == 0){
+    rx_roll = (int)PIDangleX.Compute((float)rx_roll+angle_roll,gy_aver/65.536,(float)rx_roll);
+    rx_pitch = (int)PIDangleY.Compute((float)rx_pitch-angle_pitch,gx_aver/65.536,(float)rx_pitch);
+    #ifdef DEBUGMODE
+    Serial.print( "  rx_roll: ");
+    Serial.print(rx_roll);
+    Serial.print( "  rx_pitch: ");
+    Serial.print(rx_pitch); 
+    #endif
+  }
+
+  PIDroll_val = (int)PIDroll.Compute((float)rx_roll-gx_aver/65.536);
+  PIDpitch_val = (int)PIDpitch.Compute((float)rx_pitch-gy_aver/65.536);
+  PIDyaw_val = (int)PIDyaw.Compute((float)rx_yaw-gz_aver/65.536);
 
 }
 
-void getYPR() {
-   mpuInterrupt = false;
-    mpuIntStatus = mpu.getIntStatus();
+void getSensorsData() {
+   if((micros()-tf) > 700){
+    getGyroData();
+    tf = micros(); 
+  }
+  if((millis()-ts) > 20){  //Update only once per 20ms (50Hz update rate)
+    getAccData();
+    ts = millis();
+  }
+  unsigned long timeAngle = millis();
+  float dt = (float)(timeAngle-timeAnglePrevious)/1000.0;
+  float accx = atan2(accx_temp,accz_temp)*RadToDeg;
+  float accy = atan2(accy_temp,accz_temp)*RadToDeg; 
+  angle_pitch = SPLIT*((gy_aver/65.536)*dt+angle_pitch)+(1.0-SPLIT)*accx;
+  angle_roll = SPLIT*((-gx_aver/65.536)*dt+angle_roll)+(1.0-SPLIT)*accy;
+  #ifdef DEBUGMODE
+  Serial.print( "  angle_pitch: ");
+  Serial.print(angle_pitch);
+  Serial.print( "  angle_roll: ");
+  Serial.print(angle_roll); 
+  #endif
+  timeAnglePrevious = timeAngle; 
+   
+}
 
-    // get current FIFO count
-    fifoCount = mpu.getFIFOCount();
+void getGyroData() {
+  int16_t buffer[3];
+    mpu.getRotation(&buffer[0], &buffer[1], &buffer[2]);  //Update only per 1300us, (~800Hz update rate)
+     for(byte i=0;i<(GYRO_MAF_NR-1);i++){
+    gx_temp[i]=gx_temp[i+1];
+    gy_temp[i]=gy_temp[i+1];
+    gz_temp[i]=gz_temp[i+1];
+  }
+  gx_temp[GYRO_MAF_NR-1]=(float)(buffer[0]);
+  gy_temp[GYRO_MAF_NR-1]=(float)(buffer[1]);
+  gz_temp[GYRO_MAF_NR-1]=(float)(buffer[2]);
+  gyroMAF();
+}
 
-    // check for overflow (this should never happen unless our code is too inefficient)
-    if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
-        // reset so we can continue cleanly
-        mpu.resetFIFO();
-        Serial.println(F("FIFO overflow!"));
+void getAccData() {
+  int16_t buffer[3];
+  mpu.getAcceleration(&buffer[0], &buffer[1], &buffer[2]);
+  accx_temp=(ACC_HPF_NR*accx_temp+(100-ACC_HPF_NR)*buffer[0])/300;
+  accy_temp=(ACC_HPF_NR*accy_temp+(100-ACC_HPF_NR)*buffer[1])/300;
+  accz_temp=(ACC_HPF_NR*accz_temp+(100-ACC_HPF_NR)*buffer[2])/-300;
+}
 
-    // otherwise, check for DMP data ready interrupt (this should happen frequently)
-    } else if (mpuIntStatus & 0x02) {
-        // wait for correct available data length, should be a VERY short wait
-        while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
+void gyroMAF(){//Moving average filter
+  gx_aver=0;
+  gy_aver=0;
+  gz_aver=0;
+  for(byte i=0;i<GYRO_MAF_NR;i++){
+    gx_aver=gx_aver+gx_temp[i];
+    gy_aver=gy_aver+gy_temp[i];
+    gz_aver=gz_aver+gz_temp[i];
+  }  
+  gx_aver=(float)gx_aver/GYRO_MAF_NR;
+  gy_aver=(float)gy_aver/GYRO_MAF_NR;
+  gz_aver=(float)gz_aver/GYRO_MAF_NR;
 
-        // read a packet from FIFO
-        mpu.getFIFOBytes(fifoBuffer, packetSize);
-        
-        // track FIFO count here in case there is > 1 packet available
-        // (this lets us immediately read more without waiting for an interrupt)
-        fifoCount -= packetSize;
-        
-        mpu.dmpGetQuaternion(&q, fifoBuffer);
-        mpu.dmpGetGravity(&gravity, &q);
-        mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-        //ypr[0] = ypr[0] * 180/M_PI;
-        ypr[0] = 0;
-        ypr[1] = (ypr[1] * 180/M_PI);
-        ypr[2] = (ypr[2] * 180/M_PI);
-      /*if(ypr[1] > 90 || ypr[1] < -90) ypr[1] = yprLast[1];
-        yprLast[1] = ypr[1];
-        if(ypr[2] > 90 || ypr[2] < -90) ypr[2] = yprLast[2];
-        yprLast[2] = ypr[2];*/
-  
-        #ifdef DEBUGYPR
-        Serial.print("Yaw: ");
-        Serial.print(ypr[0]);
-        Serial.print("  Pitch: ");
-        Serial.print(ypr[1]);
-        Serial.print("  Roll: ");
-        Serial.println(ypr[2]);
-        #endif
-    }
 }
 
 void calculateVelocities(){
+  throttle = map(rx_throttle, RC_THROTTLE_MIN, RC_THROTTLE_MAX, ESC_MIN, ESC_MAX);
+  if(rx_throttle==0) {
+    PIDroll_val = 0;
+    PIDpitch_val = 0;
+    PIDyaw_val = 0;
+    PIDroll.resetI();
+    PIDpitch.resetI();
+    PIDyaw.resetI();
+    PIDangleX.resetI();
+    PIDangleY.resetI();
+  }
+  int va=throttle-PIDroll_val+PIDpitch_val-PIDyaw_val;
+  int vb=throttle+PIDroll_val+PIDpitch_val+PIDyaw_val;
+  int vc=throttle-PIDroll_val-PIDpitch_val+PIDyaw_val;
+  int vd=throttle+PIDroll_val-PIDpitch_val-PIDyaw_val;
+
+  fr.writeMicroseconds(va);
+  fl.writeMicroseconds(vb);
+  rr.writeMicroseconds(vc);
+  rl.writeMicroseconds(vd);
   
-  #ifdef DEBUGFUNCTIONS
-  Serial.println("cakculateVelocities");
-  #endif
-  
-  if((remote[0] < 0) || (remote[0] > 255)) remote[0] = remoteLast[0];
-  remoteLast[0] = remote[0];
-  velocity = map(remote[0], RC_THROTTLE_MIN, RC_THROTTLE_MAX, ESC_TAKEOFF_OFFSET, ESC_MAX);
-  if((velocity < ESC_MIN) || (velocity > ESC_MAX)) velocity = velocityLast;
-  velocityLast = velocity; 
-  va=velocity+bal_roll+bal_pitch+bal_axes;
-  vb=velocity-bal_roll+bal_pitch-bal_axes;
-  vc=velocity+bal_roll-bal_pitch-bal_axes;
-  vd=velocity-bal_roll-bal_pitch+bal_axes;
-  
-  #ifdef DEBUGSPEED
-  Serial.print("FR: ");
+  #ifdef DEBUGMODE
+  /*Serial.print("FR: ");
   Serial.print(va);
   Serial.print(" FL: ");
   Serial.print(vb);
   Serial.print(" RR: ");
   Serial.print(vc);
   Serial.print(" RL: ");
-  Serial.println(vd);
+  Serial.print(vd);*/
   
-  Serial.print("Bal_pitch: ");
-  Serial.print(bal_pitch);
+  Serial.print(" Bal_pitch: ");
+  Serial.print(PIDpitch_val);
   Serial.print("  Bal_roll: ");
-  Serial.println(bal_roll);
-  Serial.print("  Bal_axes: ");
-  Serial.println(bal_axes);
+  Serial.print(PIDroll_val);
+  Serial.print("  Thr: ");
+  Serial.print(throttle);
+  Serial.print(" GX ");
+  Serial.print(gx_aver/GYROSCOPE_SENSITIVITY);
+  Serial.print(" GY: ");
+  Serial.println(gy_aver/GYROSCOPE_SENSITIVITY);
   #endif
   
-  if(velocity < ESC_TAKEOFF_OFFSET){
+  if(throttle < ESC_TAKEOFF_OFFSET){
   
     va = ESC_MIN;
     vb = ESC_MIN;
@@ -300,38 +279,22 @@ void calculateVelocities(){
   
 }
 
-void updateMotors(){
-  #ifdef DEBUGFUNCTIONS
-  Serial.println("updateMotors");
-  #endif
-  if(remote[0] > 0) {
-  fr.write(va);
-  fl.write(vc);
-  rr.write(vb);
-  rl.write(vd);
-  }
-  else {
-  fr.write(ESC_MIN);
-  fl.write(ESC_MIN);
-  rr.write(ESC_MIN);
-  rl.write(ESC_MIN);
-  }
-}
-
 void arm(){
-
-  fr.write(ESC_MIN);
-  fl.write(ESC_MIN);
-  rr.write(ESC_MIN);
-  rl.write(ESC_MIN);
-  
-  delay(ESC_ARM_DELAY);
-
+  delay(3000);
+  fr.writeMicroseconds(ESC_TAKEOFF_OFFSET);
+  fl.writeMicroseconds(ESC_TAKEOFF_OFFSET);
+  rr.writeMicroseconds(ESC_TAKEOFF_OFFSET);
+  rl.writeMicroseconds(ESC_TAKEOFF_OFFSET); 
+  delay(1000);
+  fr.writeMicroseconds(ESC_MIN);
+  fl.writeMicroseconds(ESC_MIN);
+  rr.writeMicroseconds(ESC_MIN);
+  rl.writeMicroseconds(ESC_MIN);
+  delay(2000);
 }
 
 
 void initESCs(){
-
   fr.attach(ESC_FR);
   fl.attach(ESC_FL);
   rr.attach(ESC_RR);
@@ -341,77 +304,57 @@ void initESCs(){
 
 }
 
-void initBalancing(){
-
-  bal_axes = 0;
-  bal_roll = 0;
-  bal_pitch = 0;
-
+void initRegulators(){
+  PIDroll.ChangeParameters(ROLL_P_VAL,ROLL_I_VAL,ROLL_D_VAL,-PID_ROLL_INFLUENCE,PID_ROLL_INFLUENCE);
+  PIDpitch.ChangeParameters(PITCH_P_VAL,PITCH_I_VAL,PITCH_D_VAL,-PID_PITCH_INFLUENCE,PID_PITCH_INFLUENCE);
+  PIDyaw.ChangeParameters(YAW_P_VAL,YAW_I_VAL,YAW_D_VAL,-PID_YAW_INFLUENCE,PID_YAW_INFLUENCE);
+  PIDangleX.ChangeParameters(ANGLEX_P_VAL,ANGLEX_I_VAL,ANGLEX_D_VAL,-PID_ANGLEX_INFLUENCE,PID_ANGLEX_INFLUENCE);
+  PIDangleY.ChangeParameters(ANGLEY_P_VAL,ANGLEY_I_VAL,ANGLEY_D_VAL,-PID_ANGLEY_INFLUENCE,PID_ANGLEY_INFLUENCE);
 }
 
-void initRegulators(){
-
-  pitchReg.SetMode(AUTOMATIC);
-  pitchReg.SetOutputLimits(-PID_PITCH_INFLUENCE, PID_PITCH_INFLUENCE);
-  pitchReg.SetSampleTime(100);
-  rollReg.SetMode(AUTOMATIC);
-  rollReg.SetOutputLimits(-PID_ROLL_INFLUENCE, PID_ROLL_INFLUENCE);
-  rollReg.SetSampleTime(100);
-  yawReg.SetMode(AUTOMATIC);
-  yawReg.SetOutputLimits(-PID_YAW_INFLUENCE, PID_YAW_INFLUENCE);
-  yawReg.SetSampleTime(100);
-
+void updateRegulators(){
+  //PIDroll.ChangeParameters(pGain,iGain,dGain,-PID_ROLL_INFLUENCE,PID_ROLL_INFLUENCE);
+  //PIDpitch.ChangeParameters(pGain,iGain,dGain,-PID_PITCH_INFLUENCE,PID_PITCH_INFLUENCE);
+  //PIDyaw.ChangeParameters(pGain,iGain,dGain,-PID_YAW_INFLUENCE,PID_YAW_INFLUENCE);
+  PIDangleX.ChangeParameters(pGain,iGain,dGain,-PID_ANGLEX_INFLUENCE,PID_ANGLEX_INFLUENCE);
+  PIDangleY.ChangeParameters(pGain,iGain,dGain,-PID_ANGLEY_INFLUENCE,PID_ANGLEY_INFLUENCE);
 }
 
 void rx() {
-  #ifdef DEBUGFUNCTIONS
-  Serial.println("rx");
-  #endif
-  if ( radio.available() )
-  {
-    // Read the data payload until we've received everything
-    bool done = false;
-    while (!done)
-    {
-      // Fetch the data payload
-      done = radio.read( remote, sizeof(remote) );
+  Mirf.setTADDR((byte *)"serv1");
+  if(Mirf.dataReady()) {
+    Mirf.getData((byte *)&buf);
+    radioWatchdogTimer = millis();
+  }
+  if(millis() - radioWatchdogTimer > 2000) radioLost();
+  else {
+    rx_throttle = buf[0];
+    rx_roll = buf[1] - 30;
+    rx_pitch = -1*(buf[2] - 30);
+    rx_yaw = buf[3] - 30;
+    pGain = buf[4]/100.0;
+    iGain = buf[5]/100.0;
+    dGain = buf[6]/10000.0;
+    updateRegulators();
+    if(true){
+      rateAngleSwitch=0;
     }
-    //radio.stopListening();
-    //radio.write(&ypr[1],sizeof(ypr[1]));
-    //radio.startListening();
-   updatePID();
-   #ifdef DEBUGPID
-   Serial.print("P: ");
-   Serial.print(remote[4]);
-   Serial.print(" I: ");
-   Serial.print(remote[5]);
-   Serial.print(" D: ");
-   Serial.println(remote[6]);
-   #endif
-  }
-  #ifdef DEBUGRADIO
-  else Serial.println("No radio available");
-  #endif
-
-}
-
-void updatePID() {
-  remote[4] /= 100000;
-  remote[5] /= 100000;
-  remote[6] /= 100000;
-  #ifdef DEBUGFUNCTIONS
-  Serial.println("updatePID");
-  #endif
-  if(remoteLast[4] != remote[4] || remoteLast[5] != remote[5] || remoteLast[6] != remote[6]) {
-  pitchReg.SetTunings(remote[4],remote[5],remote[6]);
-  rollReg.SetTunings(remote[4],remote[5],remote[6]);
-  yawReg.SetTunings(remote[4],remote[5],remote[6]);
-  remoteLast[4] = remote[4];
-  remoteLast[5] = remote[5];
-  remoteLast[6] = remote[6];
+    else{
+      rateAngleSwitch=1;
+    }
   }
 }
-  
+
+void radioLost() {
+  #ifdef DEBUGMODE
+    Serial.print(" noRadio ");
+  #endif
+    if((millis() - radioLostTimer > 50) && (rx_throttle > 0)) {
+      rx_throttle--;
+      radioLostTimer = millis();
+    }
+}
+
 #endif
 
 
