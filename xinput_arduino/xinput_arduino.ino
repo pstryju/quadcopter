@@ -1,6 +1,7 @@
 #include <SPI.h>
+#include <Mirf.h>
 #include <nRF24L01.h>
-#include <RF24.h>
+#include <MirfHardwareSpiDriver.h>
 
 #define CE_PIN   9
 #define CSN_PIN 10
@@ -20,12 +21,9 @@ typedef struct package{
 };
 
 struct package mb, buff;
-const uint64_t pipe = 0xE8E8F0F0E1LL;
-RF24 radio(CE_PIN, CSN_PIN);
 
-float remote[7];
+byte remote[7];
 float ypr[3];
-bool ok;
 short crc;
 
 boolean tryToRead(struct package * mid, struct package * buff){
@@ -67,27 +65,28 @@ void setup(){
 void loop(){
   tryToRead(&mb, &buff);
   remote[0] = mb.leftTrigger;
-  remote[1] = -1*((mb.LX) - 30);
-  remote[2] = -1*((mb.LY) - 30);
-  remote[3] = (mb.RX) - 30;
+  remote[1] = mb.LX;
+  remote[2] = mb.LY;
+  remote[3] = mb.RX;
   remote[4] = mb.p;
   remote[5] = mb.i;
   remote[6] = mb.d;
-  radio.stopListening();
-  ok = radio.write(remote, sizeof(remote));
-  if(ok) digitalWrite(6,HIGH);
-  else digitalWrite(6,LOW);
+   Mirf.setTADDR((byte *)"clie1");
+   Mirf.send((byte *) &remote);
+   while(Mirf.isSending()){
+    //Serial.println("Sending");
+  }
+  //Serial.println("Not sending");
     
 }
 
 void radioSetup() {
-  radio.begin();
- // radio.setRetries(15,15);
-  radio.setDataRate(RF24_250KBPS);
-  radio.setPALevel(RF24_PA_MAX);
-  radio.setChannel(70);
-  radio.enableDynamicPayloads();
-  //radio.setCRCLength(RF24_CRC_16);
-  radio.openWritingPipe(pipe);
-  radio.stopListening();
+  Mirf.cePin = 9;
+  Mirf.csnPin = 10;
+  
+  Mirf.spi = &MirfHardwareSpi;
+  Mirf.init();
+  Mirf.setRADDR((byte *)"serv1");
+  Mirf.payload = 7;
+  Mirf.config();
 }
