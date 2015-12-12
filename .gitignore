@@ -45,3 +45,13 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
+*.ipch
+xinput/Debug/xinput.ilk
+xinput/Debug/xinput.exe
+*.pdb
+xinput/xinput.v12.suo
+xinput/xinput.sdf
+*.pch
+xinput/xinput/Debug/xinput.obj
+*.tlog
+*.filters
