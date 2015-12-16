@@ -103,7 +103,7 @@ void setup(){
   initESCs();
   initMPU();
   initRegulators();
-  timeAnglePrevious=millis();
+  timeAnglePrevious = millis();
 }
 
 void loop(){
@@ -127,7 +127,6 @@ void initMPU() {
 void initRadio() {
   Mirf.cePin = 9;
   Mirf.csnPin = 10;
-  
   Mirf.spi = &MirfHardwareSpi;
   Mirf.init();
   Mirf.setRADDR((byte *)"clie1");
@@ -167,11 +166,11 @@ void getSensorsData() {
     ts = millis();
   }
   unsigned long timeAngle = millis();
-  float dt = (float)(timeAngle-timeAnglePrevious)/1000.0;
+  float deltaAngleTime = (float)(timeAngle-timeAnglePrevious) / 1000.0;
   float accx = atan2(accx_temp,accz_temp)*RadToDeg;
   float accy = atan2(accy_temp,accz_temp)*RadToDeg; 
-  angle_pitch = SPLIT*((-gy_aver/65.536)*dt+angle_pitch)+(1.0-SPLIT)*accx;
-  angle_roll = SPLIT*((gx_aver/65.536)*dt+angle_roll)+(1.0-SPLIT)*accy;
+  angle_pitch = SPLIT*((-gy_aver/65.536)*deltaAngleTime+angle_pitch)+(1.0-SPLIT)*accx;
+  angle_roll = SPLIT*((gx_aver/65.536)*deltaAngleTime+angle_roll)+(1.0-SPLIT)*accy;
   #ifdef DEBUGMODE
   Serial.print( "  angle_pitch: ");
   Serial.print(angle_pitch);
@@ -184,24 +183,24 @@ void getSensorsData() {
 
 void getGyroData() {
   int16_t buffer[3];
-    mpu.getRotation(&buffer[0], &buffer[1], &buffer[2]);  //Update only per 1300us, (~800Hz update rate)
-     for(byte i=0;i<(GYRO_MAF_NR-1);i++){
+  mpu.getRotation(&buffer[0], &buffer[1], &buffer[2]);  //Update only per 1300us, (~800Hz update rate)
+  for(byte i = 0; i < (GYRO_MAF_NR-1); i++){
     gx_temp[i]=gx_temp[i+1];
     gy_temp[i]=gy_temp[i+1];
     gz_temp[i]=gz_temp[i+1];
   }
-  gx_temp[GYRO_MAF_NR-1]=(float)(buffer[0]);
-  gy_temp[GYRO_MAF_NR-1]=(float)(buffer[1]);
-  gz_temp[GYRO_MAF_NR-1]=(float)(buffer[2]);
+  gx_temp[GYRO_MAF_NR-1] = (float)(buffer[0]);
+  gy_temp[GYRO_MAF_NR-1] = (float)(buffer[1]);
+  gz_temp[GYRO_MAF_NR-1] = (float)(buffer[2]);
   gyroMAF();
 }
 
 void getAccData() {
   int16_t buffer[3];
   mpu.getAcceleration(&buffer[0], &buffer[1], &buffer[2]);
-  accx_temp=(ACC_HPF_NR*accx_temp+(100-ACC_HPF_NR)*buffer[0])/300;
-  accy_temp=(ACC_HPF_NR*accy_temp+(100-ACC_HPF_NR)*buffer[1])/300;
-  accz_temp=(ACC_HPF_NR*accz_temp+(100-ACC_HPF_NR)*buffer[2])/300;
+  accx_temp = (ACC_HPF_NR*accx_temp + (100-ACC_HPF_NR)*buffer[0]) / 300;
+  accy_temp = (ACC_HPF_NR*accy_temp + (100-ACC_HPF_NR)*buffer[1]) / 300;
+  accz_temp = (ACC_HPF_NR*accz_temp + (100-ACC_HPF_NR)*buffer[2]) / 300;
 }
 
 void gyroMAF(){//Moving average filter
@@ -321,7 +320,9 @@ void rx() {
     Mirf.getData((byte *)&buf);
     radioWatchdogTimer = millis();
   }
-  if(millis() - radioWatchdogTimer > 2000) radioLost();
+  if(millis() - radioWatchdogTimer > 2000) {
+    radioLost();
+  }
   else {
     rx_throttle = buf[0];
     rx_roll = buf[1] - 30;
@@ -332,10 +333,10 @@ void rx() {
     dGain = buf[6]/10000.0;
     updateRegulators();
     if(false){
-      rateAngleSwitch=0;
+      rateAngleSwitch = false;
     }
     else{
-      rateAngleSwitch=1;
+      rateAngleSwitch = true;
     }
   }
 }
