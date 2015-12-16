@@ -1,7 +1,7 @@
 #ifndef QUADARDU
 #define QUADARDU
 
-//#define DEBUGMODE
+#define DEBUGMODE
 
 #define ESC_FL 6
 #define ESC_RL 4
@@ -71,16 +71,12 @@ int rx_pitch, rx_roll, rx_yaw;
 
 MPU6050 mpu;
 double bal_roll = 0, bal_pitch = 0, bal_axes = 0;
-float gx_aver=0;
-float gy_aver=0;
-float gz_aver=0;
+float gx_aver=0, gy_aver=0, gz_aver=0;
 float gx_temp[GYRO_MAF_NR]={0.0,0.0};
 float gy_temp[GYRO_MAF_NR]={0.0,0.0};
 float gz_temp[GYRO_MAF_NR]={0.0,0.0};
 float angle_pitch, angle_roll;
-int accx_temp = 0;
-int accy_temp = 0;
-int accz_temp = 0;
+int accx_temp = 0, accy_temp = 0, accz_temp = 0;
 
 PIDCont PIDroll, PIDpitch, PIDyaw ,PIDangleX, PIDangleY;
 int PIDroll_val, PIDpitch_val, PIDyaw_val;
@@ -120,12 +116,12 @@ void loop(){
 void initMPU() {
   Wire.begin();
   mpu.initialize();
-  mpu.setXGyroOffset(106);
-  mpu.setYGyroOffset(47);
-  mpu.setZGyroOffset(31);
-  mpu.setXAccelOffset(-4953);
-  mpu.setYAccelOffset(-1353);
-  mpu.setZAccelOffset(947);
+  mpu.setXGyroOffset(86);
+  mpu.setYGyroOffset(24);
+  mpu.setZGyroOffset(28);
+  mpu.setXAccelOffset(-4895);
+  mpu.setYAccelOffset(-1421);
+  mpu.setZAccelOffset(900);
 }
 
 void initRadio() {
@@ -140,12 +136,11 @@ void initRadio() {
 }
 
 void computePID(){
-  if(rateAngleSwitch==1) {
+  if(rateAngleSwitch) {
     PIDangleX.resetI();
     PIDangleY.resetI();
   }
-
-  if (rateAngleSwitch == 0){
+  else {
     rx_roll = (int)PIDangleX.Compute((float)rx_roll+angle_roll,gy_aver/65.536,(float)rx_roll);
     rx_pitch = (int)PIDangleY.Compute((float)rx_pitch-angle_pitch,gx_aver/65.536,(float)rx_pitch);
     #ifdef DEBUGMODE
@@ -175,8 +170,8 @@ void getSensorsData() {
   float dt = (float)(timeAngle-timeAnglePrevious)/1000.0;
   float accx = atan2(accx_temp,accz_temp)*RadToDeg;
   float accy = atan2(accy_temp,accz_temp)*RadToDeg; 
-  angle_pitch = SPLIT*((gy_aver/65.536)*dt+angle_pitch)+(1.0-SPLIT)*accx;
-  angle_roll = SPLIT*((-gx_aver/65.536)*dt+angle_roll)+(1.0-SPLIT)*accy;
+  angle_pitch = SPLIT*((-gy_aver/65.536)*dt+angle_pitch)+(1.0-SPLIT)*accx;
+  angle_roll = SPLIT*((gx_aver/65.536)*dt+angle_roll)+(1.0-SPLIT)*accy;
   #ifdef DEBUGMODE
   Serial.print( "  angle_pitch: ");
   Serial.print(angle_pitch);
@@ -206,7 +201,7 @@ void getAccData() {
   mpu.getAcceleration(&buffer[0], &buffer[1], &buffer[2]);
   accx_temp=(ACC_HPF_NR*accx_temp+(100-ACC_HPF_NR)*buffer[0])/300;
   accy_temp=(ACC_HPF_NR*accy_temp+(100-ACC_HPF_NR)*buffer[1])/300;
-  accz_temp=(ACC_HPF_NR*accz_temp+(100-ACC_HPF_NR)*buffer[2])/-300;
+  accz_temp=(ACC_HPF_NR*accz_temp+(100-ACC_HPF_NR)*buffer[2])/300;
 }
 
 void gyroMAF(){//Moving average filter
@@ -236,10 +231,10 @@ void calculateVelocities(){
     PIDangleX.resetI();
     PIDangleY.resetI();
   }
-  int va=throttle-PIDroll_val+PIDpitch_val-PIDyaw_val;
-  int vb=throttle+PIDroll_val+PIDpitch_val+PIDyaw_val;
-  int vc=throttle-PIDroll_val-PIDpitch_val+PIDyaw_val;
-  int vd=throttle+PIDroll_val-PIDpitch_val-PIDyaw_val;
+  int va=throttle-PIDroll_val-PIDpitch_val-PIDyaw_val;
+  int vb=throttle+PIDroll_val-PIDpitch_val+PIDyaw_val;
+  int vc=throttle-PIDroll_val+PIDpitch_val+PIDyaw_val;
+  int vd=throttle+PIDroll_val+PIDpitch_val-PIDyaw_val;
 
   fr.writeMicroseconds(va);
   fl.writeMicroseconds(vb);
@@ -247,14 +242,14 @@ void calculateVelocities(){
   rl.writeMicroseconds(vd);
   
   #ifdef DEBUGMODE
-  /*Serial.print("FR: ");
+  Serial.print("FR: ");
   Serial.print(va);
   Serial.print(" FL: ");
   Serial.print(vb);
   Serial.print(" RR: ");
   Serial.print(vc);
   Serial.print(" RL: ");
-  Serial.print(vd);*/
+  Serial.print(vd);
   
   Serial.print(" Bal_pitch: ");
   Serial.print(PIDpitch_val);
@@ -336,7 +331,7 @@ void rx() {
     iGain = buf[5]/100.0;
     dGain = buf[6]/10000.0;
     updateRegulators();
-    if(true){
+    if(false){
       rateAngleSwitch=0;
     }
     else{
@@ -348,7 +343,7 @@ void rx() {
 void radioLost() {
   #ifdef DEBUGMODE
     Serial.print(" noRadio ");
-  #endif
+      #endif
     if((millis() - radioLostTimer > 50) && (rx_throttle > 0)) {
       rx_throttle--;
       radioLostTimer = millis();
